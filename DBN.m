@@ -28,19 +28,39 @@ classdef DBN
             end
         end
         
-        function [dbn, reconstruction_errors] = pretrain(dbn, data_train, data_valid, batch_size, epoch, alpha, l1, l2, momentum, k, k_pcd, use_gpu, output)
-            [dbn.rbm{1}, reconstruction_errors] = dbn.rbm{1}.train(data_train, data_valid, batch_size, epoch, alpha, l1, l2, momentum, k, k_pcd, use_gpu, output);
+        function [dbn, reconstruction_errors, epochs] = pretrain(dbn, data_train, data_valid, batch_size, max_epoch, alpha, l1, l2, momentum, k, k_pcd, use_gpu, output)
+            epochs = zeros(1, size(dbn.sizes, 2) - 2);
+            [dbn.rbm{1}, reconstruction_errors] = dbn.rbm{1}.train(data_train, data_valid, batch_size, max_epoch, alpha, l1, l2, momentum, k, k_pcd, use_gpu, output);
+            epochs(1) = size(reconstruction_errors{2}, 1);
             dbn.nn.W{1} = dbn.rbm{1}.W{1};
             for i = 2:size(dbn.sizes, 2) - 2
                 data_train = dbn.rbm{i - 1}.reconstruct(data_train, false, false);
                 data_valid = dbn.rbm{i - 1}.reconstruct(data_valid, false, false);
-                [dbn.rbm{i}, reconstruction_errors] = dbn.rbm{i}.train(data_train, data_valid, batch_size, epoch, alpha, l1, l2, momentum, k, k_pcd, use_gpu, output);
+                [dbn.rbm{i}, reconstruction_errors] = dbn.rbm{i}.train(data_train, data_valid, batch_size, max_epoch, alpha, l1, l2, momentum, k, k_pcd, use_gpu, output);
+                epochs(i) = size(reconstruction_errors{2}, 1);
                 dbn.nn.W{i} = dbn.rbm{i}.W{1};
             end
         end
         
-        function [dbn, cross_entropy_errors, classification_errors] = finetune(dbn, data_train, data_valid, batch_norm, batch_size, dropout, epoch, alpha, l1, l2, momentum, use_gpu, output)
-            [dbn.nn, cross_entropy_errors, classification_errors] = dbn.nn.train(data_train, data_valid, batch_norm, batch_size, dropout, epoch, alpha, l1, l2, momentum, use_gpu, output);
+        function [dbn, cross_entropy_errors, classification_errors] = finetune(dbn, data_train, data_valid, batch_norm, batch_size, dropout, epoch, alpha, l1, l2, momentum, use_gpu, output, valid)
+            [dbn.nn, cross_entropy_errors, classification_errors] = dbn.nn.train(data_train, data_valid, batch_norm, batch_size, dropout, epoch, alpha, l1, l2, momentum, use_gpu, output, valid);
+        end
+        
+        function dbn = reset_rbm(dbn, i)
+            switch dbn.g_type
+                case {'bb', 'gb'}
+                    if i == 1
+                        dbn.rbm{1} = RBM(dbn.sizes(1:2), dbn.g_type);
+                    else
+                        dbn.rbm{i} = RBM(dbn.sizes(i:i + 1), 'bb');
+                    end
+                case {'rr', 'gr'}
+                    if i == 1
+                        dbn.rbm{1} = RBM(dbn.sizes(1:2), dbn.g_type);
+                    else
+                        dbn.rbm{i} = RBM(dbn.sizes(i:i + 1), 'rr');
+                    end
+            end
         end
         
         function dbn = reset_nn(dbn)
