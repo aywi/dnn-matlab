@@ -24,19 +24,19 @@ classdef NN
             nn.sizes = sizes;
             switch g_type
                 case 'linear'
-                    a = 1;
+                    gain = 1;
                     nn.g = @(x) x;
                     nn.g_prime = @(x) ones(size(x), 'single');
                 case 'sigmoid'
-                    a = 1;
+                    gain = 1;
                     nn.g = @(x) 1 ./ (1 + exp(-x));
                     nn.g_prime = @(x) nn.g(x) .* (1 - nn.g(x));
                 case 'tanh'
-                    a = 1;
+                    gain = 5 / 3;
                     nn.g = @tanh;
                     nn.g_prime = @(x) 1 - tanh(x) .^ 2;
                 case 'relu'
-                    a = 2;
+                    gain = sqrt(2);
                     nn.g = @(x) max(x, zeros(size(x), 'single'));
                     nn.g_prime = @(x) single(x > 0);
             end
@@ -49,7 +49,8 @@ classdef NN
             nn.update_b = cell(1, size(nn.sizes, 2) - 1);
             rng('default');
             for i = 1:size(nn.sizes, 2) - 1
-                nn.W{i} = randn(nn.sizes(i + 1), nn.sizes(i), 'single') .* sqrt(a / nn.sizes(i));
+                a = gain * sqrt(6 / (nn.sizes(i) + nn.sizes(i + 1)));
+                nn.W{i} = -a + (a - (-a)) .* rand(nn.sizes(i + 1), nn.sizes(i), 'single');
                 nn.b{i} = zeros(nn.sizes(i + 1), 1, 'single');
                 nn.nabla_W{i} = zeros(nn.sizes(i + 1), nn.sizes(i), 'single');
                 nn.nabla_b{i} = zeros(nn.sizes(i + 1), 1, 'single');
@@ -61,7 +62,7 @@ classdef NN
             nn.dropout = 0;
         end
         
-        function [nn, cross_entropy_errors, classification_errors] = train(nn, data_train, data_valid, batch_norm, batch_size, dropout, epoch, alpha, l1, l2, momentum, use_gpu, output)
+        function [nn, cross_entropy_errors, classification_errors] = train(nn, data_train, data_valid, batch_norm, batch_size, dropout, epoch, alpha, l1, l2, momentum, use_gpu, output, valid)
             x_train = single(data_train{1});
             y_train = single(data_train{2});
             n_train = size(y_train, 2);
@@ -93,6 +94,13 @@ classdef NN
                 end
             end
             rng('default');
+            n = 5;
+            p = 10;
+            e = 0;
+            v_e = Inf;
+            W_best = nn.W;
+            b_best = nn.b;
+            i_best = 0;
             for i = 1:epoch
                 shuffle = randperm(n_train);
                 x_train = x_train(:, shuffle);
@@ -108,6 +116,26 @@ classdef NN
                     fprintf('Epoch %d completed\n', i);
                     fprintf('Training cross-entropy error  : %6.4f  Training classification error  : %5.2f%%\n', train_cross_entropy_errors(i), train_classification_errors(i));
                     fprintf('Validation cross-entropy error: %6.4f  Validation classification error: %5.2f%%\n', valid_cross_entropy_errors(i), valid_classification_errors(i));
+                end
+                if valid && mod(i, n) == 0
+                    if valid_cross_entropy_errors(i) > v_e
+                        e = e + 1;
+                    else
+                        e = 0;
+                        v_e = valid_cross_entropy_errors(i);
+                        W_best = nn.W;
+                        b_best = nn.b;
+                        i_best = i;
+                    end
+                end
+                if valid && (e >= p || i == epoch)
+                    nn.W = W_best;
+                    nn.b = b_best;
+                    train_cross_entropy_errors = train_cross_entropy_errors(1:i_best);
+                    valid_cross_entropy_errors = valid_cross_entropy_errors(1:i_best);
+                    train_classification_errors = train_classification_errors(1:i_best);
+                    valid_classification_errors = valid_classification_errors(1:i_best);
+                    break
                 end
             end
             for i = 1:size(nn.sizes, 2) - 1

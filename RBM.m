@@ -28,28 +28,28 @@ classdef RBM
             rbm.sizes = sizes;
             switch g_type
                 case 'bb'
-                    a = 1;
+                    gain = 1;
                     rbm.g = @(x) 1 ./ (1 + exp(-x));
                     rbm.gr = @(x) rbm.g(x);
                     rbm.x_start = @(x) randi([0, 1], size(x), 'single');
                     rbm.x_sample = @(x) single(rand(size(x)) < x);
                     rbm.h_x_sample = @(x) rbm.x_sample(x);
                 case 'gb'
-                    a = 1;
+                    gain = 1;
                     rbm.g = @(x) 1 ./ (1 + exp(-x));
                     rbm.gr = @(x) x;
                     rbm.x_start = @(x) randn(size(x), 'single');
                     rbm.x_sample = @(x) randn(size(x), 'single') + x;
                     rbm.h_x_sample = @(x) single(rand(size(x)) < x);
                 case 'rr'
-                    a = 2;
+                    gain = sqrt(2);
                     rbm.g = @(x) max(x, zeros(size(x), 'single'));
                     rbm.gr = @(x) rbm.g(x);
                     rbm.x_start = @(x) max(randn(size(x), 'single'), zeros(size(x), 'single'));
                     rbm.x_sample = @(x) max(randn(size(x), 'single') + x, zeros(size(x), 'single'));
                     rbm.h_x_sample = @(x) rbm.x_sample(x);
                 case 'gr'
-                    a = 2;
+                    gain = sqrt(2);
                     rbm.g = @(x) max(x, zeros(size(x), 'single'));
                     rbm.gr = @(x) x;
                     rbm.x_start = @(x) randn(size(x), 'single');
@@ -68,7 +68,8 @@ classdef RBM
             rbm.update_c = cell(1, size(rbm.sizes, 2) - 1);
             rng('default');
             for i = 1:size(rbm.sizes, 2) - 1
-                rbm.W{i} = randn(rbm.sizes(i + 1), rbm.sizes(i), 'single') .* sqrt(a / rbm.sizes(i));
+                a = gain * sqrt(6 / (rbm.sizes(i) + rbm.sizes(i + 1)));
+                rbm.W{i} = -a + (a - (-a)) .* rand(rbm.sizes(i + 1), rbm.sizes(i), 'single');
                 rbm.b{i} = zeros(rbm.sizes(i + 1), 1, 'single');
                 rbm.c{i} = zeros(rbm.sizes(i), 1, 'single');
                 rbm.nabla_W{i} = zeros(rbm.sizes(i + 1), rbm.sizes(i), 'single');
@@ -106,6 +107,14 @@ classdef RBM
                 end
             end
             rng('default');
+            n = 5;
+            p = 10;
+            e = 0;
+            v_e = Inf;
+            W_best = rbm.W;
+            b_best = rbm.b;
+            c_best = rbm.c;
+            i_best = 0;
             for i = 1:epoch
                 shuffle = randperm(n_train);
                 x_train = x_train(:, shuffle);
@@ -119,6 +128,26 @@ classdef RBM
                     fprintf('Epoch %d completed\n', i);
                     fprintf('Training reconstruction error  : %7.4f\n', train_reconstruction_errors(i));
                     fprintf('Validation reconstruction error: %7.4f\n', valid_reconstruction_errors(i));
+                end
+                if mod(i, n) == 0
+                    if valid_reconstruction_errors(i) > v_e
+                        e = e + 1;
+                    else
+                        e = 0;
+                        v_e = valid_reconstruction_errors(i);
+                        W_best = rbm.W;
+                        b_best = rbm.b;
+                        c_best = rbm.c;
+                        i_best = i;
+                    end
+                end
+                if e >= p || i == epoch
+                    rbm.W = W_best;
+                    rbm.b = b_best;
+                    rbm.c = c_best;
+                    train_reconstruction_errors = train_reconstruction_errors(1:i_best);
+                    valid_reconstruction_errors = valid_reconstruction_errors(1:i_best);
+                    break
                 end
             end
             for i = 1:size(rbm.sizes, 2) - 1
